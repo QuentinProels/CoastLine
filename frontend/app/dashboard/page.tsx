@@ -11,7 +11,7 @@ import TabCareerPath from '@/components/dashboard/TabCareerPath';
 import TabLifetimeCashflow from '@/components/dashboard/TabLifetimeCashflow';
 import TabRetirementLifestyle from '@/components/dashboard/TabRetirementLifestyle';
         
-const TABS = ['Overview', 'Career Path', 'Retirement Lifestyle', 'FIRE Projections', 'Lifetime Cashflow', 'Budget & Debt', 'AI Insights'] as const;
+const TABS = ['Overview', 'Career Path', 'Retirement Lifestyle', 'FIRE Projections', 'Lifetime Cashflow', 'Budget & Debt'] as const;
 type Tab = typeof TABS[number];
 
 function DashboardContent() {
