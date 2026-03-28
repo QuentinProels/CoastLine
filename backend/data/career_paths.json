@@ -1,0 +1,79 @@
+{
+  "swe": {
+    "label": "Software Engineer",
+    "progression": [
+      {"level": "Junior/SWE I", "years_range": [0, 2], "salary_range": [70000, 90000], "median": 82000},
+      {"level": "SWE II", "years_range": [2, 5], "salary_range": [90000, 130000], "median": 110000},
+      {"level": "Senior SWE", "years_range": [5, 10], "salary_range": [130000, 200000], "median": 165000},
+      {"level": "Staff SWE", "years_range": [10, 15], "salary_range": [180000, 280000], "median": 220000},
+      {"level": "Principal/Distinguished", "years_range": [15, 25], "salary_range": [250000, 400000], "median": 310000}
+    ]
+  },
+  "consultant": {
+    "label": "Management Consultant",
+    "progression": [
+      {"level": "Analyst", "years_range": [0, 2], "salary_range": [55000, 75000], "median": 65000},
+      {"level": "Consultant", "years_range": [2, 5], "salary_range": [75000, 110000], "median": 90000},
+      {"level": "Senior Consultant", "years_range": [5, 8], "salary_range": [100000, 145000], "median": 120000},
+      {"level": "Manager", "years_range": [8, 12], "salary_range": [130000, 180000], "median": 155000},
+      {"level": "Senior Manager/Director", "years_range": [12, 20], "salary_range": [160000, 250000], "median": 200000}
+    ]
+  },
+  "investment_banking": {
+    "label": "Investment Banking",
+    "progression": [
+      {"level": "Analyst", "years_range": [0, 3], "salary_range": [100000, 140000], "median": 120000},
+      {"level": "Associate", "years_range": [3, 6], "salary_range": [150000, 220000], "median": 185000},
+      {"level": "VP", "years_range": [6, 10], "salary_range": [200000, 350000], "median": 275000},
+      {"level": "Director/ED", "years_range": [10, 15], "salary_range": [300000, 500000], "median": 400000},
+      {"level": "Managing Director", "years_range": [15, 25], "salary_range": [500000, 1000000], "median": 700000}
+    ]
+  },
+  "cpa": {
+    "label": "Accountant / CPA",
+    "progression": [
+      {"level": "Staff Accountant", "years_range": [0, 3], "salary_range": [48000, 65000], "median": 55000},
+      {"level": "Senior Accountant", "years_range": [3, 6], "salary_range": [62000, 85000], "median": 72000},
+      {"level": "Manager", "years_range": [6, 10], "salary_range": [80000, 115000], "median": 95000},
+      {"level": "Senior Manager", "years_range": [10, 15], "salary_range": [100000, 140000], "median": 120000},
+      {"level": "Partner/Director", "years_range": [15, 25], "salary_range": [130000, 250000], "median": 180000}
+    ]
+  },
+  "nurse": {
+    "label": "Registered Nurse",
+    "progression": [
+      {"level": "New Grad RN", "years_range": [0, 2], "salary_range": [52000, 68000], "median": 60000},
+      {"level": "RN (experienced)", "years_range": [2, 7], "salary_range": [65000, 85000], "median": 75000},
+      {"level": "Charge Nurse / Specialist", "years_range": [7, 12], "salary_range": [78000, 100000], "median": 88000},
+      {"level": "Nurse Practitioner / CRNA", "years_range": [12, 20], "salary_range": [95000, 160000], "median": 120000}
+    ]
+  },
+  "teacher": {
+    "label": "K-12 Teacher",
+    "progression": [
+      {"level": "Entry Teacher", "years_range": [0, 5], "salary_range": [38000, 48000], "median": 43000},
+      {"level": "Mid-Career Teacher", "years_range": [5, 15], "salary_range": [45000, 62000], "median": 53000},
+      {"level": "Senior Teacher / Dept Head", "years_range": [15, 25], "salary_range": [55000, 75000], "median": 65000},
+      {"level": "Admin / Principal", "years_range": [20, 30], "salary_range": [70000, 110000], "median": 88000}
+    ]
+  },
+  "data_scientist": {
+    "label": "Data Scientist",
+    "progression": [
+      {"level": "Junior DS", "years_range": [0, 2], "salary_range": [75000, 100000], "median": 88000},
+      {"level": "Data Scientist", "years_range": [2, 5], "salary_range": [100000, 140000], "median": 120000},
+      {"level": "Senior DS", "years_range": [5, 10], "salary_range": [135000, 190000], "median": 160000},
+      {"level": "Staff/Principal DS", "years_range": [10, 15], "salary_range": [175000, 260000], "median": 210000}
+    ]
+  },
+  "product_manager": {
+    "label": "Product Manager",
+    "progression": [
+      {"level": "Associate PM", "years_range": [0, 2], "salary_range": [70000, 95000], "median": 82000},
+      {"level": "Product Manager", "years_range": [2, 5], "salary_range": [95000, 140000], "median": 115000},
+      {"level": "Senior PM", "years_range": [5, 10], "salary_range": [135000, 200000], "median": 165000},
+      {"level": "Director of Product", "years_range": [10, 15], "salary_range": [180000, 280000], "median": 225000},
+      {"level": "VP Product", "years_range": [15, 25], "salary_range": [250000, 400000], "median": 320000}
+    ]
+  }
+}
