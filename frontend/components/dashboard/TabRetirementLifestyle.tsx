@@ -1,10 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { FullProfile, RetirementLifestyle } from '@/lib/types';
+import { runSimulation } from '@/lib/api';
+import type { FullProfile, RetirementLifestyle, SimulationResult, CareerPaths } from '@/lib/types';
 import { lifestyleTotalMonthly } from '@/lib/types';
-import { Save, Check, Home, UtensilsCrossed, HeartPulse, Plane, Music, Car, Zap, MoreHorizontal } from 'lucide-react';
+import { Save, Check, Home, UtensilsCrossed, HeartPulse, Plane, Music, Car, Zap, MoreHorizontal, RefreshCw, Calculator } from 'lucide-react';
+import careerPaths from '@/data/career_paths.json';
+
+const careers = careerPaths as CareerPaths;
 
 interface Props {
   data: FullProfile;
@@ -37,11 +41,43 @@ const CATEGORIES = [
 type CategoryKey = typeof CATEGORIES[number]['key'];
 
 function formatMoney(n: number) {
-  return `$${n.toLocaleString()}`;
+  return `$${Math.round(n).toLocaleString()}`;
+}
+
+function buildSalaryProgression(profile: FullProfile['profile']) {
+  if (profile.salary_progression && profile.salary_progression.length > 0) {
+    return profile.salary_progression.map((sp) => ({ age: sp.age, salary: sp.salary }));
+  }
+  const path = careers[profile.career_path];
+  if (!path) return [{ age: profile.current_age, salary: profile.annual_salary }];
+  return path.progression.map((level) => ({
+    age: profile.current_age + level.years_range[0],
+    salary: level.median,
+  }));
+}
+
+// Scale goal lifestyle down to fit a sustainable monthly budget
+function scaleGoalToTarget(goal: RetirementLifestyle, targetMonthly: number): RetirementLifestyle {
+  const goalTotal = lifestyleTotalMonthly(goal);
+  if (goalTotal <= 0) return { ...EMPTY_LIFESTYLE, lifestyle_type: 'predicted' };
+
+  const ratio = Math.min(targetMonthly / goalTotal, 1); // never scale up beyond goal
+
+  return {
+    lifestyle_type: 'predicted',
+    housing_monthly: Math.round(goal.housing_monthly * ratio),
+    food_monthly: Math.round(goal.food_monthly * ratio),
+    healthcare_monthly: Math.round(goal.healthcare_monthly * ratio),
+    travel_annual: Math.round(goal.travel_annual * ratio),
+    leisure_monthly: Math.round(goal.leisure_monthly * ratio),
+    transportation_monthly: Math.round(goal.transportation_monthly * ratio),
+    utilities_monthly: Math.round(goal.utilities_monthly * ratio),
+    other_monthly: Math.round(goal.other_monthly * ratio),
+  };
 }
 
 export default function TabRetirementLifestyle({ data, onSaved }: Props) {
-  const { profile } = data;
+  const { profile, expenses, debts, assets } = data;
 
   const [goal, setGoal] = useState<RetirementLifestyle>(
     data.retirementLifestyles?.goal || { ...EMPTY_LIFESTYLE, lifestyle_type: 'goal' }
@@ -49,16 +85,85 @@ export default function TabRetirementLifestyle({ data, onSaved }: Props) {
   const [predicted, setPredicted] = useState<RetirementLifestyle>(
     data.retirementLifestyles?.predicted || { ...EMPTY_LIFESTYLE, lifestyle_type: 'predicted' }
   );
+  const [predictedOverridden, setPredictedOverridden] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [calculating, setCalculating] = useState(false);
+  const [sustainableMonthly, setSustainableMonthly] = useState<number | null>(null);
 
+  // Reset state when profile changes
   useEffect(() => {
     setGoal(data.retirementLifestyles?.goal || { ...EMPTY_LIFESTYLE, lifestyle_type: 'goal' });
     setPredicted(data.retirementLifestyles?.predicted || { ...EMPTY_LIFESTYLE, lifestyle_type: 'predicted' });
+    setPredictedOverridden(false);
     setDirty(false);
     setSaved(false);
+    setSustainableMonthly(null);
   }, [profile.id]);
+
+  // Compute sustainable monthly income from simulation
+  const computePredicted = useCallback(async () => {
+    setCalculating(true);
+    try {
+      const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+      const totalDebtPayments = debts.reduce((s, d) => s + d.min_payment, 0);
+      const totalDebt = debts.reduce((s, d) => s + d.balance, 0);
+      const surplus = profile.monthly_take_home - totalExpenses - totalDebtPayments;
+      const goalTotal = lifestyleTotalMonthly(goal);
+
+      const sim = await runSimulation({
+        current_age: profile.current_age,
+        retirement_target_age: profile.retirement_target_age,
+        annual_salary: profile.annual_salary,
+        salary_progression: buildSalaryProgression(profile),
+        monthly_expenses: totalExpenses,
+        monthly_debt_payments: totalDebtPayments,
+        total_debt: totalDebt,
+        current_assets: {
+          retirement_accounts: assets.filter((a) => ['401k', 'roth_ira'].includes(a.type)).reduce((s, a) => s + a.balance, 0),
+          taxable: assets.filter((a) => a.type === 'brokerage').reduce((s, a) => s + a.balance, 0),
+          savings: assets.filter((a) => a.type === 'savings').reduce((s, a) => s + a.balance, 0),
+        },
+        monthly_savings_rate: Math.max(0, surplus),
+        employer_match_pct: profile.employer_match_pct,
+        safe_withdrawal_rate: profile.safe_withdrawal_rate,
+        goal_monthly_retirement_income: goalTotal || 5000,
+        predicted_monthly_retirement_income: goalTotal * 0.7 || 3500,
+      }) as SimulationResult;
+
+      // Find median NW at retirement_target_age
+      const retireIdx = profile.retirement_target_age - profile.current_age;
+      const p50 = sim.percentiles.p50;
+      const nwAtRetire = retireIdx >= 0 && retireIdx < p50.length
+        ? p50[retireIdx].net_worth
+        : 0;
+
+      // Sustainable monthly = NW * SWR / 12
+      const swr = profile.safe_withdrawal_rate || 0.04;
+      const sustainable = (nwAtRetire * swr) / 12;
+      setSustainableMonthly(sustainable);
+
+      // Auto-populate predicted by scaling goal categories
+      if (!predictedOverridden) {
+        const newPredicted = scaleGoalToTarget(goal, sustainable);
+        setPredicted(newPredicted);
+        setDirty(true);
+      }
+    } catch (err) {
+      console.error('Failed to compute predicted lifestyle:', err);
+    }
+    setCalculating(false);
+  }, [profile, expenses, debts, assets, goal, predictedOverridden]);
+
+  // Auto-compute on first load when goal exists but predicted is empty/zero
+  useEffect(() => {
+    const goalTotal = lifestyleTotalMonthly(goal);
+    const predTotal = lifestyleTotalMonthly(predicted);
+    if (goalTotal > 0 && predTotal === 0 && !calculating) {
+      computePredicted();
+    }
+  }, [goal, profile.id]);
 
   const goalTotal = lifestyleTotalMonthly(goal);
   const predictedTotal = lifestyleTotalMonthly(predicted);
@@ -72,21 +177,25 @@ export default function TabRetirementLifestyle({ data, onSaved }: Props) {
 
   const updatePredicted = (key: CategoryKey, value: number) => {
     setPredicted({ ...predicted, [key]: value });
+    setPredictedOverridden(true);
     setDirty(true);
     setSaved(false);
+  };
+
+  const recalcPredicted = () => {
+    setPredictedOverridden(false);
+    computePredicted();
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Upsert goal
       const goalRow = { ...goal, profile_id: profile.id, lifestyle_type: 'goal' as const };
       delete (goalRow as any).id;
       await supabase.from('retirement_lifestyles').upsert(goalRow, {
         onConflict: 'profile_id,lifestyle_type',
       });
 
-      // Upsert predicted
       const predRow = { ...predicted, profile_id: profile.id, lifestyle_type: 'predicted' as const };
       delete (predRow as any).id;
       await supabase.from('retirement_lifestyles').upsert(predRow, {
@@ -110,21 +219,31 @@ export default function TabRetirementLifestyle({ data, onSaved }: Props) {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold">Retirement Lifestyle</h3>
-          <p className="text-sm text-gray-500">Define what you want vs. what your trajectory supports</p>
+          <p className="text-sm text-gray-500">Define what you want — we&apos;ll calculate what your trajectory supports</p>
         </div>
-        <button
-          onClick={handleSave}
-          disabled={saving || !dirty}
-          className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
-            saved
-              ? 'bg-green-600 text-white'
-              : dirty
-              ? 'bg-blue-600 text-white hover:bg-blue-700'
-              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-          }`}
-        >
-          {saving ? 'Saving...' : saved ? (<><Check className="w-4 h-4" /> Saved</>) : (<><Save className="w-4 h-4" /> Save</>)}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={recalcPredicted}
+            disabled={calculating || goalTotal === 0}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-blue-600 hover:text-blue-800 border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50"
+          >
+            <Calculator className={`w-3.5 h-3.5 ${calculating ? 'animate-spin' : ''}`} />
+            {calculating ? 'Calculating...' : 'Recalculate Predicted'}
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !dirty}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+              saved
+                ? 'bg-green-600 text-white'
+                : dirty
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            }`}
+          >
+            {saving ? 'Saving...' : saved ? (<><Check className="w-4 h-4" /> Saved</>) : (<><Save className="w-4 h-4" /> Save</>)}
+          </button>
+        </div>
       </div>
 
       {/* Coverage summary */}
@@ -137,7 +256,11 @@ export default function TabRetirementLifestyle({ data, onSaved }: Props) {
         <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-4 text-center">
           <p className="text-xs text-blue-600 font-medium">Predicted Lifestyle</p>
           <p className="text-3xl font-bold text-blue-700">{formatMoney(predictedTotal)}<span className="text-base font-normal">/mo</span></p>
-          <p className="text-xs text-blue-500">{formatMoney(predictedTotal * 12)}/yr</p>
+          <p className="text-xs text-blue-500">
+            {sustainableMonthly !== null
+              ? `Based on ${formatMoney(sustainableMonthly)}/mo sustainable withdrawal`
+              : `${formatMoney(predictedTotal * 12)}/yr`}
+          </p>
         </div>
         <div className={`border-2 rounded-xl p-4 text-center ${
           coveragePct >= 90 ? 'bg-green-50 border-green-300' :
@@ -154,13 +277,30 @@ export default function TabRetirementLifestyle({ data, onSaved }: Props) {
         </div>
       </div>
 
+      {/* Explanation of how predicted is calculated */}
+      {sustainableMonthly !== null && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+          <p className="text-sm text-gray-600">
+            <strong>How predicted is calculated:</strong> Based on your Monte Carlo projection, your median
+            net worth at age {profile.retirement_target_age} is approximately{' '}
+            <strong>{formatMoney((sustainableMonthly * 12) / (profile.safe_withdrawal_rate || 0.04))}</strong>.
+            At a {((profile.safe_withdrawal_rate || 0.04) * 100).toFixed(0)}% safe withdrawal rate, that
+            supports <strong>{formatMoney(sustainableMonthly)}/mo</strong> in retirement. Your goal
+            categories are scaled proportionally to fit this budget.
+            {predictedOverridden && (
+              <span className="text-blue-600"> (You&apos;ve manually adjusted some values.)</span>
+            )}
+          </p>
+        </div>
+      )}
+
       {/* Side-by-side category editor */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {/* Header row */}
         <div className="grid grid-cols-[1fr_180px_180px_80px] gap-4 px-6 py-3 bg-gray-50 border-b border-gray-200">
           <p className="text-xs font-semibold text-gray-500 uppercase">Category</p>
           <p className="text-xs font-semibold text-amber-600 uppercase text-center">Goal</p>
-          <p className="text-xs font-semibold text-blue-600 uppercase text-center">Predicted</p>
+          <p className="text-xs font-semibold text-blue-600 uppercase text-center">Predicted (auto)</p>
           <p className="text-xs font-semibold text-gray-500 uppercase text-center">Gap</p>
         </div>
 
@@ -233,7 +373,7 @@ export default function TabRetirementLifestyle({ data, onSaved }: Props) {
           <strong>How this connects to FIRE:</strong> Your goal lifestyle of {formatMoney(goalTotal)}/mo
           requires {formatMoney(goalTotal * 12 * 25)} invested (25x annual spending) to retire.
           Your predicted lifestyle of {formatMoney(predictedTotal)}/mo requires {formatMoney(predictedTotal * 12 * 25)}.
-          Check the FIRE Projections tab to see when you'll hit each target.
+          Check the FIRE Projections tab to see when you&apos;ll hit each target.
         </p>
       </div>
 
