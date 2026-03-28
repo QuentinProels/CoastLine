@@ -11,3 +11,6 @@ venv/
 
 # IDE
 .idea/
+
+# Next.js build output
+.next/

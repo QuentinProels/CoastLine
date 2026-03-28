@@ -9,7 +9,7 @@ const sampleProfiles = [
     name: 'Alex',
     subtitle: 'High Debt / Entry Level',
     salary: '$42,000/yr',
-    story: 'Junior Marketing Coordinator drowning in credit card debt with a negative monthly surplus.',
+    story: 'Junior Marketing Coordinator with heavy debt on a tight budget. Barely surviving — can they make it to retirement?',
     color: 'border-red-400 bg-red-50',
     badge: 'bg-red-100 text-red-700',
     badgeText: 'Struggling',

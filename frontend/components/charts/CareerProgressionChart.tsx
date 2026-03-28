@@ -8,10 +8,10 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  ReferenceDot,
   CartesianGrid,
+  Legend,
 } from 'recharts';
-import { Plus, Trash2, GripVertical } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 
 export interface SalaryPoint {
   age: number;
@@ -19,10 +19,21 @@ export interface SalaryPoint {
   label?: string;
 }
 
+export interface BenchmarkLine {
+  label: string;
+  data: { age: number; salary: number; levelLabel?: string }[];
+  color?: string;
+}
+
+// Default annual raise applied within each "step" (between user milestones)
+const DEFAULT_ANNUAL_RAISE = 0.03; // 3% per year
+
 interface Props {
   points: SalaryPoint[];
   onChange: (points: SalaryPoint[]) => void;
   currentAge: number;
+  benchmarkLines?: BenchmarkLine[];
+  annualRaisePct?: number; // override default annual raise between milestones
 }
 
 const formatSalary = (value: number) => {
@@ -31,122 +42,171 @@ const formatSalary = (value: number) => {
   return `$${value}`;
 };
 
-// Custom dot that shows it's draggable
-function DraggableDot(props: any) {
-  const { cx, cy, index, activeIndex } = props;
-  if (cx == null || cy == null) return null;
-  const isActive = index === activeIndex;
-  return (
-    <g>
-      <circle
-        cx={cx}
-        cy={cy}
-        r={isActive ? 10 : 7}
-        fill={isActive ? '#2563eb' : '#3b82f6'}
-        stroke="#fff"
-        strokeWidth={2}
-        style={{ cursor: 'ns-resize', transition: 'r 0.15s' }}
-      />
-      {/* Vertical grip lines to hint drag */}
-      <line x1={cx - 2} y1={cy - 3} x2={cx - 2} y2={cy + 3} stroke="#fff" strokeWidth={1} style={{ pointerEvents: 'none' }} />
-      <line x1={cx + 2} y1={cy - 3} x2={cx + 2} y2={cy + 3} stroke="#fff" strokeWidth={1} style={{ pointerEvents: 'none' }} />
-    </g>
-  );
-}
+const BENCHMARK_COLORS = ['#f97316', '#8b5cf6', '#10b981', '#ef4444', '#ec4899', '#14b8a6', '#f59e0b', '#6366f1'];
 
-// Custom label rendered above each point
-function PointLabel(props: any) {
-  const { x, y, value, index, points } = props;
-  if (x == null || y == null) return null;
-  const point = points[index];
-  if (!point?.label) return null;
-  return (
-    <text
-      x={x}
-      y={y - 16}
-      textAnchor="middle"
-      fill="#4b5563"
-      fontSize={11}
-      fontWeight={500}
-    >
-      {point.label}
-    </text>
-  );
-}
+const DOT_RADIUS = 14;
+const DOT_RADIUS_ACTIVE = 18;
 
-export default function CareerProgressionChart({ points, onChange, currentAge }: Props) {
+export default function CareerProgressionChart({ points, onChange, currentAge, benchmarkLines = [], annualRaisePct }: Props) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
-  const chartRef = useRef<HTMLDivElement>(null);
-  const chartBoundsRef = useRef<{ top: number; bottom: number; minSalary: number; maxSalary: number } | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Compute chart Y domain
-  const salaries = points.map((p) => p.salary);
+  // We store the Recharts internal coordinate system so we can map data <-> pixels
+  const chartLayoutRef = useRef<{
+    left: number; right: number; top: number; bottom: number;
+    xMin: number; xMax: number; yMin: number; yMax: number;
+  } | null>(null);
+
+  // Compute chart domains (include benchmark salaries for Y range)
+  const allSalaries = [
+    ...points.map((p) => p.salary),
+    ...benchmarkLines.flatMap((bl) => bl.data.map((d) => d.salary)),
+  ];
   const minSalary = 0;
-  const maxSalary = Math.max(...salaries) * 1.3;
+  const maxSalary = Math.max(...allSalaries, 50000) * 1.3;
 
-  // Build interpolated data for smooth line (every age)
   const sorted = [...points].sort((a, b) => a.age - b.age);
   const minAge = Math.min(currentAge, sorted[0]?.age ?? currentAge);
   const maxAge = Math.max(70, sorted[sorted.length - 1]?.age ?? 65);
 
-  const interpolated: { age: number; salary: number }[] = [];
-  for (let age = minAge; age <= maxAge; age++) {
-    // Find surrounding points
-    let before = sorted[0];
-    let after = sorted[sorted.length - 1];
-    for (let i = 0; i < sorted.length - 1; i++) {
-      if (sorted[i].age <= age && sorted[i + 1].age >= age) {
-        before = sorted[i];
-        after = sorted[i + 1];
+  // Step function with annual raise: salary stays at milestone level + compounds
+  // by DEFAULT_ANNUAL_RAISE each year until the next milestone jump
+  const stepWithRaise = (pts: { age: number; salary: number }[], age: number): number | undefined => {
+    if (pts.length === 0) return undefined;
+    if (age < pts[0].age) return pts[0].salary;
+
+    // Find which milestone we're in
+    let base = pts[0];
+    for (let i = pts.length - 1; i >= 0; i--) {
+      if (age >= pts[i].age) {
+        base = pts[i];
         break;
       }
     }
-    if (age <= sorted[0].age) {
-      interpolated.push({ age, salary: sorted[0].salary });
-    } else if (age >= sorted[sorted.length - 1].age) {
-      interpolated.push({ age, salary: sorted[sorted.length - 1].salary });
-    } else {
-      const t = (age - before.age) / (after.age - before.age);
-      interpolated.push({ age, salary: Math.round(before.salary + t * (after.salary - before.salary)) });
-    }
-  }
+    const raise = annualRaisePct !== undefined ? annualRaisePct / 100 : DEFAULT_ANNUAL_RAISE;
+    const yearsInLevel = age - base.age;
+    return Math.round(base.salary * Math.pow(1 + raise, yearsInLevel));
+  };
 
-  // Mouse handlers for drag
-  const handleMouseDown = useCallback((index: number) => {
-    setActiveIndex(index);
-    setDragging(true);
-
-    // Capture chart pixel bounds for mapping
-    if (chartRef.current) {
-      const svg = chartRef.current.querySelector('.recharts-surface');
-      const plotArea = chartRef.current.querySelector('.recharts-cartesian-grid');
-      if (plotArea) {
-        const rect = plotArea.getBoundingClientRect();
-        chartBoundsRef.current = {
-          top: rect.top,
-          bottom: rect.bottom,
-          minSalary,
-          maxSalary,
-        };
+  // Step function for benchmarks (no raise between levels — flat steps)
+  const stepFlat = (pts: { age: number; salary: number }[], age: number): number | undefined => {
+    if (pts.length === 0) return undefined;
+    if (age < pts[0].age) return pts[0].salary;
+    let val = pts[0].salary;
+    for (let i = pts.length - 1; i >= 0; i--) {
+      if (age >= pts[i].age) {
+        val = pts[i].salary;
+        break;
       }
     }
-  }, [minSalary, maxSalary]);
+    return val;
+  };
+
+  // Build chart data: user line (step + raise) and benchmark lines (flat step)
+  const interpolated: Record<string, number>[] = [];
+  for (let age = minAge; age <= maxAge; age++) {
+    const row: Record<string, number> = {
+      age,
+      salary: stepWithRaise(sorted, age) ?? sorted[0]?.salary ?? 0,
+    };
+    benchmarkLines.forEach((bl, idx) => {
+      const sortedBl = [...bl.data].sort((a, b) => a.age - b.age);
+      const val = stepFlat(sortedBl, age);
+      if (val !== undefined) row[`benchmark_${idx}`] = val;
+    });
+    interpolated.push(row);
+  }
+
+  // Collect benchmark level transition labels for SVG overlay
+  const benchmarkLabels: { age: number; salary: number; label: string; color: string }[] = [];
+  benchmarkLines.forEach((bl, idx) => {
+    const color = bl.color || BENCHMARK_COLORS[idx % BENCHMARK_COLORS.length];
+    bl.data.forEach((d) => {
+      if (d.levelLabel) {
+        benchmarkLabels.push({ age: d.age, salary: d.salary, label: d.levelLabel, color });
+      }
+    });
+  });
+
+  // Capture the recharts plot area bounds from the CartesianGrid element
+  const captureChartBounds = useCallback(() => {
+    if (!containerRef.current) return;
+    const grid = containerRef.current.querySelector('.recharts-cartesian-grid');
+    if (!grid) return;
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const gridRect = grid.getBoundingClientRect();
+    chartLayoutRef.current = {
+      left: gridRect.left - containerRect.left,
+      right: gridRect.right - containerRect.left,
+      top: gridRect.top - containerRect.top,
+      bottom: gridRect.bottom - containerRect.top,
+      xMin: minAge,
+      xMax: maxAge,
+      yMin: minSalary,
+      yMax: maxSalary,
+    };
+  }, [minAge, maxAge, minSalary, maxSalary]);
+
+  // Recapture on resize
+  useEffect(() => {
+    captureChartBounds();
+    window.addEventListener('resize', captureChartBounds);
+    return () => window.removeEventListener('resize', captureChartBounds);
+  }, [captureChartBounds, points]);
+
+  // Also capture after first render / data change with a slight delay (recharts animation)
+  useEffect(() => {
+    const t = setTimeout(captureChartBounds, 100);
+    return () => clearTimeout(t);
+  }, [captureChartBounds, interpolated.length]);
+
+  // Map data coords to pixel coords relative to container
+  const dataToPixel = (age: number, salary: number) => {
+    const layout = chartLayoutRef.current;
+    if (!layout) return { x: 0, y: 0 };
+    const xPct = (age - layout.xMin) / (layout.xMax - layout.xMin);
+    const yPct = (salary - layout.yMin) / (layout.yMax - layout.yMin);
+    return {
+      x: layout.left + xPct * (layout.right - layout.left),
+      y: layout.bottom - yPct * (layout.bottom - layout.top),
+    };
+  };
+
+  const pixelToData = (px: number, py: number) => {
+    const layout = chartLayoutRef.current;
+    if (!layout) return { age: currentAge, salary: 0 };
+    const xPct = (px - layout.left) / (layout.right - layout.left);
+    const yPct = 1 - (py - layout.top) / (layout.bottom - layout.top);
+    return {
+      age: Math.round(layout.xMin + xPct * (layout.xMax - layout.xMin)),
+      salary: Math.round((layout.yMin + yPct * (layout.yMax - layout.yMin)) / 1000) * 1000,
+    };
+  };
+
+  // Drag handlers
+  const handleDotMouseDown = useCallback((e: React.MouseEvent, index: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setActiveIndex(index);
+    setDragging(true);
+    captureChartBounds();
+  }, [captureChartBounds]);
 
   useEffect(() => {
     if (!dragging || activeIndex === null) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const bounds = chartBoundsRef.current;
-      if (!bounds) return;
-
-      // Map pixel Y to salary
-      const pct = 1 - (e.clientY - bounds.top) / (bounds.bottom - bounds.top);
-      const clampedPct = Math.max(0, Math.min(1, pct));
-      const newSalary = Math.round((bounds.minSalary + clampedPct * (bounds.maxSalary - bounds.minSalary)) / 1000) * 1000;
+      if (!containerRef.current) return;
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const relX = e.clientX - containerRect.left;
+      const relY = e.clientY - containerRect.top;
+      const { age, salary } = pixelToData(relX, relY);
+      const clampedAge = Math.max(currentAge, Math.min(85, age));
 
       const updated = [...points];
-      updated[activeIndex] = { ...updated[activeIndex], salary: Math.max(0, newSalary) };
+      updated[activeIndex] = { ...updated[activeIndex], age: clampedAge, salary: Math.max(0, salary) };
       onChange(updated);
     };
 
@@ -163,24 +223,27 @@ export default function CareerProgressionChart({ points, onChange, currentAge }:
     };
   }, [dragging, activeIndex, points, onChange]);
 
-  // Click on chart area to add a point
-  const handleChartClick = useCallback(
-    (e: any) => {
+  // Click on chart to add a point
+  const handleOverlayClick = useCallback(
+    (e: React.MouseEvent) => {
       if (dragging) return;
-      if (!e || !e.activeLabel) return;
-      const clickedAge = Number(e.activeLabel);
-      // Don't add if too close to an existing point
-      if (points.some((p) => Math.abs(p.age - clickedAge) < 2)) return;
+      if (!containerRef.current) return;
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const relX = e.clientX - containerRect.left;
+      const relY = e.clientY - containerRect.top;
+      const { age, salary } = pixelToData(relX, relY);
 
-      // Interpolate salary at this age
-      const match = interpolated.find((d) => d.age === clickedAge);
-      const newSalary = match ? match.salary : points[0]?.salary || 50000;
+      // Don't add if outside plot area or too close to existing point
+      const layout = chartLayoutRef.current;
+      if (!layout) return;
+      if (relX < layout.left || relX > layout.right || relY < layout.top || relY > layout.bottom) return;
+      if (points.some((p) => Math.abs(p.age - age) < 2)) return;
 
-      const updated = [...points, { age: clickedAge, salary: newSalary, label: `Age ${clickedAge}` }]
+      const updated = [...points, { age, salary: Math.max(0, salary), label: '' }]
         .sort((a, b) => a.age - b.age);
       onChange(updated);
     },
-    [dragging, points, interpolated, onChange]
+    [dragging, points, onChange]
   );
 
   const removePoint = (index: number) => {
@@ -210,19 +273,23 @@ export default function CareerProgressionChart({ points, onChange, currentAge }:
 
   return (
     <div className="space-y-4">
-      {/* Chart */}
-      <div ref={chartRef} className="bg-white rounded-xl border border-gray-200 p-4">
+      {/* Chart with overlay dots */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-medium text-gray-600">
             Salary Progression — <span className="text-blue-600">drag points to adjust, click chart to add</span>
           </p>
         </div>
-        <div className="h-64" style={{ userSelect: 'none' }}>
+        <div
+          ref={containerRef}
+          className="relative h-80"
+          style={{ userSelect: 'none' }}
+        >
+          {/* Recharts line chart (no dots — we render our own) */}
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={interpolated}
-              onClick={handleChartClick}
-              margin={{ top: 25, right: 20, left: 10, bottom: 5 }}
+              margin={{ top: 30, right: 20, left: 10, bottom: 5 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis
@@ -242,39 +309,156 @@ export default function CareerProgressionChart({ points, onChange, currentAge }:
                 formatter={(value: number) => [`$${value.toLocaleString()}`, 'Salary']}
                 labelFormatter={(age) => `Age ${age}`}
               />
-              {/* Interpolated line */}
               <Line
                 type="monotone"
                 dataKey="salary"
-                stroke="#93c5fd"
-                strokeWidth={2}
+                stroke="#3b82f6"
+                strokeWidth={2.5}
                 dot={false}
                 activeDot={false}
+                name="Your Path"
               />
+              {benchmarkLines.map((bl, idx) => (
+                <Line
+                  key={idx}
+                  type="stepAfter"
+                  dataKey={`benchmark_${idx}`}
+                  stroke={bl.color || BENCHMARK_COLORS[idx % BENCHMARK_COLORS.length]}
+                  strokeWidth={2}
+                  strokeDasharray="6 3"
+                  dot={false}
+                  activeDot={false}
+                  name={bl.label}
+                />
+              ))}
+              {benchmarkLines.length > 0 && <Legend wrapperStyle={{ fontSize: 12 }} />}
             </LineChart>
           </ResponsiveContainer>
 
-          {/* Overlay draggable dots using absolute positioning mapped from data */}
-          {/* We use ReferenceDots rendered via a second pass */}
-        </div>
+          {/* Transparent click overlay (behind dots, above chart) */}
+          <div
+            className="absolute inset-0"
+            style={{ zIndex: 10 }}
+            onClick={handleOverlayClick}
+          />
 
-        {/* Draggable point indicators rendered as overlaid SVG circles via chart */}
-        {/* Since Recharts ReferenceDot doesn't support onMouseDown well, we use the dot table below */}
-        <div className="flex flex-wrap gap-2 mt-2">
-          {sorted.map((point, i) => (
-            <span
-              key={i}
-              className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full cursor-ns-resize select-none ${
-                activeIndex === i
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-              }`}
-              onMouseDown={() => handleMouseDown(i)}
-            >
-              <GripVertical className="w-3 h-3" />
-              {point.label || `Age ${point.age}`}: {formatSalary(point.salary)}
-            </span>
-          ))}
+          {/* Draggable dot overlay */}
+          <svg
+            className="absolute inset-0 pointer-events-none"
+            style={{ zIndex: 20, overflow: 'visible' }}
+            width="100%"
+            height="100%"
+          >
+            {sorted.map((point, i) => {
+              const pos = dataToPixel(point.age, point.salary);
+              const isActive = activeIndex === i;
+              const isHover = hoverIndex === i;
+              const r = isActive ? DOT_RADIUS_ACTIVE : isHover ? DOT_RADIUS + 2 : DOT_RADIUS;
+
+              return (
+                <g key={i} style={{ pointerEvents: 'auto' }}>
+                  {/* Larger invisible hit area */}
+                  <circle
+                    cx={pos.x}
+                    cy={pos.y}
+                    r={r + 8}
+                    fill="transparent"
+                    style={{ cursor: 'move' }}
+                    onMouseDown={(e) => handleDotMouseDown(e, i)}
+                    onMouseEnter={() => setHoverIndex(i)}
+                    onMouseLeave={() => setHoverIndex(null)}
+                  />
+                  {/* Outer glow ring */}
+                  <circle
+                    cx={pos.x}
+                    cy={pos.y}
+                    r={r + 4}
+                    fill="none"
+                    stroke={isActive ? '#2563eb' : '#93c5fd'}
+                    strokeWidth={2}
+                    opacity={isActive || isHover ? 0.5 : 0}
+                    style={{ transition: 'opacity 0.15s, r 0.15s' }}
+                  />
+                  {/* Main dot */}
+                  <circle
+                    cx={pos.x}
+                    cy={pos.y}
+                    r={r}
+                    fill={isActive ? '#1d4ed8' : '#3b82f6'}
+                    stroke="#fff"
+                    strokeWidth={3}
+                    style={{
+                      cursor: 'move',
+                      transition: 'r 0.15s, fill 0.15s',
+                      filter: isActive ? 'drop-shadow(0 2px 8px rgba(37, 99, 235, 0.5))' : isHover ? 'drop-shadow(0 2px 6px rgba(37, 99, 235, 0.3))' : 'none',
+                    }}
+                    onMouseDown={(e) => handleDotMouseDown(e, i)}
+                    onMouseEnter={() => setHoverIndex(i)}
+                    onMouseLeave={() => setHoverIndex(null)}
+                  />
+                  {/* Grip icon inside dot (two vertical lines) */}
+                  <line x1={pos.x - 3} y1={pos.y - 4} x2={pos.x - 3} y2={pos.y + 4} stroke="#fff" strokeWidth={1.5} strokeLinecap="round" style={{ pointerEvents: 'none' }} />
+                  <line x1={pos.x} y1={pos.y - 4} x2={pos.x} y2={pos.y + 4} stroke="#fff" strokeWidth={1.5} strokeLinecap="round" style={{ pointerEvents: 'none' }} />
+                  <line x1={pos.x + 3} y1={pos.y - 4} x2={pos.x + 3} y2={pos.y + 4} stroke="#fff" strokeWidth={1.5} strokeLinecap="round" style={{ pointerEvents: 'none' }} />
+                  {/* Label above dot */}
+                  <text
+                    x={pos.x}
+                    y={pos.y - r - 8}
+                    textAnchor="middle"
+                    fill="#1e40af"
+                    fontSize={12}
+                    fontWeight={600}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {point.label || `Age ${point.age}`}
+                  </text>
+                  {/* Salary below dot */}
+                  <text
+                    x={pos.x}
+                    y={pos.y + r + 16}
+                    textAnchor="middle"
+                    fill="#6b7280"
+                    fontSize={11}
+                    fontWeight={500}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {formatSalary(point.salary)}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Benchmark level transition labels */}
+            {benchmarkLabels.map((bl, i) => {
+              const pos = dataToPixel(bl.age, bl.salary);
+              return (
+                <g key={`bl-${i}`} style={{ pointerEvents: 'none' }}>
+                  {/* Small diamond marker at transition */}
+                  <rect
+                    x={pos.x - 4}
+                    y={pos.y - 4}
+                    width={8}
+                    height={8}
+                    rx={1}
+                    fill={bl.color}
+                    transform={`rotate(45 ${pos.x} ${pos.y})`}
+                  />
+                  {/* Level label */}
+                  <text
+                    x={pos.x + 8}
+                    y={pos.y - 6}
+                    textAnchor="start"
+                    fill={bl.color}
+                    fontSize={10}
+                    fontWeight={600}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {bl.label}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
         </div>
       </div>
 

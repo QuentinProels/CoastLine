@@ -18,7 +18,7 @@ def run_simulation(
     num_simulations: int = 1000,
 ) -> dict:
     """Run Monte Carlo simulation for FIRE projections."""
-    max_age = 85
+    max_age = 95
     years = max_age - current_age
 
     # Market parameters

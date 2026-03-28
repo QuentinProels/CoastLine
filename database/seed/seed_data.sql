@@ -9,13 +9,15 @@ DELETE FROM profiles WHERE is_sample = true;
 
 -- ============================================
 -- ALEX — High Debt / Entry Level
--- Marketing coordinator, slow salary growth, negative surplus
--- With current lifestyle: cannot retire until ~80
+-- Marketing coordinator, slow salary growth, deficit at start
+-- Score 0, only Coast FIRE achievable (age 45)
+-- Lean/Barista/Fat FIRE all N/A — NW peaks ~440k@65, runs out by 90
+-- Story: "you can accumulate a bit, but it's nowhere near enough to retire"
 -- ============================================
 INSERT INTO profiles (id, name, slug, is_sample, current_age, career_path, career_level_index, annual_salary, monthly_take_home, employer_match_pct, retirement_target_age, desired_monthly_retirement_income, safe_withdrawal_rate, salary_progression)
 VALUES (
   '11111111-1111-1111-1111-111111111111',
-  'Alex', 'alex', true, 24, 'consultant', 0, 42000, 2800, 0, 65, 4000, 0.04,
+  'Alex', 'alex', true, 24, 'consultant', 0, 42000, 2520, 0, 80, 5000, 0.04,
   '[{"age": 24, "salary": 42000, "label": "Marketing Coordinator"},
     {"age": 28, "salary": 48000, "label": "Sr. Coordinator"},
     {"age": 33, "salary": 55000, "label": "Marketing Manager"},
@@ -23,15 +25,16 @@ VALUES (
     {"age": 50, "salary": 72000, "label": "Director of Marketing"}]'::jsonb
 );
 
--- Alex's expenses (total $2,640 + debt $682 = $3,322 on $2,800 take-home = -$522 deficit)
+-- Alex's expenses (total $2,100 + debt $682 = $2,782 on $2,520 take-home = -$262 deficit)
+-- Deep enough deficit at start that accumulation is slow, peaks modest, fades by 90
 INSERT INTO expenses (profile_id, category, label, amount) VALUES
-  ('11111111-1111-1111-1111-111111111111', 'rent', 'Rent', 1200),
-  ('11111111-1111-1111-1111-111111111111', 'car_payment', 'Car Payment', 380),
-  ('11111111-1111-1111-1111-111111111111', 'groceries', 'Groceries', 400),
-  ('11111111-1111-1111-1111-111111111111', 'dining', 'Dining Out', 250),
-  ('11111111-1111-1111-1111-111111111111', 'subscriptions', 'Subscriptions', 80),
+  ('11111111-1111-1111-1111-111111111111', 'rent', 'Rent', 1000),
+  ('11111111-1111-1111-1111-111111111111', 'car_payment', 'Car Payment', 300),
+  ('11111111-1111-1111-1111-111111111111', 'groceries', 'Groceries', 320),
+  ('11111111-1111-1111-1111-111111111111', 'dining', 'Dining Out', 120),
+  ('11111111-1111-1111-1111-111111111111', 'subscriptions', 'Subscriptions', 40),
   ('11111111-1111-1111-1111-111111111111', 'utilities', 'Utilities', 150),
-  ('11111111-1111-1111-1111-111111111111', 'insurance', 'Insurance', 180);
+  ('11111111-1111-1111-1111-111111111111', 'insurance', 'Insurance', 170);
 
 -- Alex's debts (high-APR credit cards + student loans)
 INSERT INTO debts (profile_id, name, balance, apr, min_payment) VALUES

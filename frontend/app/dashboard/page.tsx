@@ -8,8 +8,9 @@ import TabOverview from '@/components/dashboard/TabOverview';
 import TabFire from '@/components/dashboard/TabFire';
 import TabBudgetDebt from '@/components/dashboard/TabBudgetDebt';
 import TabAiInsights from '@/components/dashboard/TabAiInsights';
+import TabCareerPath from '@/components/dashboard/TabCareerPath';
 
-const TABS = ['Overview', 'FIRE Projections', 'Budget & Debt', 'AI Insights'] as const;
+const TABS = ['Overview', 'Career Path', 'FIRE Projections', 'Budget & Debt', 'AI Insights'] as const;
 type Tab = typeof TABS[number];
 
 function DashboardContent() {
@@ -20,34 +21,35 @@ function DashboardContent() {
   const [data, setData] = useState<FullProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function loadProfile() {
-      setLoading(true);
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('slug', profileSlug)
-        .single();
+  const loadProfile = async () => {
+    setLoading(true);
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('slug', profileSlug)
+      .single();
 
-      if (!profile) {
-        setLoading(false);
-        return;
-      }
-
-      const [{ data: expenses }, { data: debts }, { data: assets }] = await Promise.all([
-        supabase.from('expenses').select('*').eq('profile_id', profile.id),
-        supabase.from('debts').select('*').eq('profile_id', profile.id),
-        supabase.from('assets').select('*').eq('profile_id', profile.id),
-      ]);
-
-      setData({
-        profile,
-        expenses: expenses || [],
-        debts: debts || [],
-        assets: assets || [],
-      });
+    if (!profile) {
       setLoading(false);
+      return;
     }
+
+    const [{ data: expenses }, { data: debts }, { data: assets }] = await Promise.all([
+      supabase.from('expenses').select('*').eq('profile_id', profile.id),
+      supabase.from('debts').select('*').eq('profile_id', profile.id),
+      supabase.from('assets').select('*').eq('profile_id', profile.id),
+    ]);
+
+    setData({
+      profile,
+      expenses: expenses || [],
+      debts: debts || [],
+      assets: assets || [],
+    });
+    setLoading(false);
+  };
+
+  useEffect(() => {
     loadProfile();
   }, [profileSlug]);
 
@@ -109,6 +111,7 @@ function DashboardContent() {
       {/* Tab Content */}
       <main className="max-w-6xl mx-auto px-6 py-8">
         {activeTab === 'Overview' && <TabOverview data={data} />}
+        {activeTab === 'Career Path' && <TabCareerPath data={data} onSaved={loadProfile} />}
         {activeTab === 'FIRE Projections' && <TabFire data={data} />}
         {activeTab === 'Budget & Debt' && <TabBudgetDebt data={data} />}
         {activeTab === 'AI Insights' && <TabAiInsights data={data} />}
