@@ -52,8 +52,7 @@ export default function LandingPage() {
           </p>
           <p className="text-gray-600 max-w-2xl mx-auto">
             CoastLine projects four FIRE retirement timelines using Monte Carlo simulations,
-            analyzes your budget against benchmarks, optimizes your debt payoff strategy,
-            and provides AI-powered financial insights — all from your financial profile.
+            analyzes your budget against benchmarks, and optimizes your debt payoff strategy — all from your financial profile.
           </p>
         </div>
       </header>
@@ -98,7 +97,6 @@ export default function LandingPage() {
           {[
             { icon: TrendingUp, text: 'Monte Carlo Projections' },
             { icon: DollarSign, text: 'Debt Payoff Optimizer' },
-            { icon: Target, text: 'AI Budget Analysis' },
           ].map(({ icon: Icon, text }) => (
             <div key={text} className="flex items-center gap-2 bg-white border border-gray-200 rounded-full px-4 py-2 text-sm text-gray-600">
               <Icon className="w-4 h-4 text-blue-500" />
