@@ -7,10 +7,10 @@ import type { FullProfile } from '@/lib/types';
 import TabOverview from '@/components/dashboard/TabOverview';
 import TabFire from '@/components/dashboard/TabFire';
 import TabBudgetDebt from '@/components/dashboard/TabBudgetDebt';
-import TabAiInsights from '@/components/dashboard/TabAiInsights';
 import TabCareerPath from '@/components/dashboard/TabCareerPath';
+import TabLifetimeCashflow from '@/components/dashboard/TabLifetimeCashflow';
 
-const TABS = ['Overview', 'Career Path', 'FIRE Projections', 'Budget & Debt', 'AI Insights'] as const;
+const TABS = ['Overview', 'Career Path', 'Lifetime Cashflow', 'FIRE Projections', 'Budget & Debt'] as const;
 type Tab = typeof TABS[number];
 
 function DashboardContent() {
@@ -112,9 +112,9 @@ function DashboardContent() {
       <main className="max-w-6xl mx-auto px-6 py-8">
         {activeTab === 'Overview' && <TabOverview data={data} />}
         {activeTab === 'Career Path' && <TabCareerPath data={data} onSaved={loadProfile} />}
+        {activeTab === 'Lifetime Cashflow' && <TabLifetimeCashflow data={data} />}
         {activeTab === 'FIRE Projections' && <TabFire data={data} />}
         {activeTab === 'Budget & Debt' && <TabBudgetDebt data={data} />}
-        {activeTab === 'AI Insights' && <TabAiInsights data={data} />}
       </main>
     </div>
   );
